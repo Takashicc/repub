@@ -11,15 +11,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Show rename commands for each epub file
-    Rename(params::rename::RenameParams),
+    /// Fix epub issues
+    Fix(params::fix::FixParams),
 }
 
 fn main() {
     let cli = Cli::parse();
     match &cli.command {
-        Some(Commands::Rename(v)) => {
-            executor::rename::execute(v);
+        Some(Commands::Fix(v)) => {
+            executor::fix::execute(v);
         }
         None => eprintln!("No subcommand provided!\nCheck the subcommands with `repub -h`"),
     }

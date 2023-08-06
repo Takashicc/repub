@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser)]
-pub struct RenameParams {
+pub struct FixParams {
     #[arg(help = "Target directory")]
-    pub target_dir: String,
+    pub input_dir: String,
 }
