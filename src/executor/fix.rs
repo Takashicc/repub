@@ -35,7 +35,9 @@ pub fn execute(params: &FixParams) {
                 let mut content = String::new();
                 file.read_to_string(&mut content).unwrap();
 
-                let modified_content = content.replace("&nbsp;", "&#160;");
+                let modified_content = content
+                    .replace("&nbsp;", "&#160;")
+                    .replace("<html>", "<?xml version=\"1.0\" encoding=\"utf-8\"?><!DOCTYPE html><html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" xml:lang=\"ja\" lang=\"ja\">");
 
                 write!(modified_file, "{}", modified_content).unwrap();
             } else {
@@ -52,20 +54,37 @@ pub fn execute(params: &FixParams) {
         let writer = fs::File::create(output_file).unwrap();
         let mut zip = ZipWriter::new(writer);
         let options = FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored)
+            .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(0o755);
+
+        let mut added_directories = std::collections::HashSet::new();
         for entry in WalkDir::new(&temp_dir).into_iter().filter_map(Result::ok) {
             let path = entry.path();
             if path.is_file() {
-                zip.start_file(
-                    path.strip_prefix(&temp_dir).unwrap().to_str().unwrap(),
-                    options,
-                )
-                .unwrap();
+                let full_path = path
+                    .strip_prefix(&temp_dir)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace('\\', "/");
+                let dirname = path
+                    .strip_prefix(&temp_dir)
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .replace('\\', "/");
+
+                if !dirname.is_empty() && added_directories.contains(&dirname) {
+                    zip.add_directory(&dirname, options).unwrap();
+                    added_directories.insert(dirname);
+                }
+
+                zip.start_file(full_path, options).unwrap();
+                let mut file = fs::File::open(path).unwrap();
+                std::io::copy(&mut file, &mut zip).unwrap();
             }
-            // TODO On windows, this will fail because of the permission denied error
-            let mut file = fs::File::open(path).unwrap();
-            std::io::copy(&mut file, &mut zip).unwrap();
         }
     }
 }
