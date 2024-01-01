@@ -96,6 +96,7 @@ impl BookMetadata {
             let author = self.author.as_ref().unwrap();
             let author = strings::to_half_width(author);
             let author = strings::replace_unsafe_symbols(&author);
+            let author = strings::remove_spaces(&author);
             self.author = Some(author);
         }
     }
@@ -107,6 +108,7 @@ impl BookMetadata {
             let title = strings::replace_unsafe_symbols(&title);
             let title = strings::replace_round_brackets(&title);
             let title = strings::pad_volume_number(&title);
+            let title = strings::remove_spaces(&title);
             self.title = Some(title);
         }
     }

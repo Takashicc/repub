@@ -43,22 +43,29 @@ pub fn replace_round_brackets(input: &str) -> String {
 }
 
 pub fn pad_volume_number(input: &str) -> String {
-    let re1 = Regex::new(r"\s*\(\s*(\d+)\s*\)\s+").unwrap();
-    let result1 = re1.replace_all(input, |caps: &regex::Captures| {
+    let re = Regex::new(r"\s*\(?\s*(\d+)\s*\)?\s+").unwrap();
+    let result = re.replace_all(input, |caps: &regex::Captures| {
         format!(" {:02} ", caps[1].parse::<i32>().unwrap())
     });
 
-    let re2 = Regex::new(r"\s*\(\s*(\d+)\s*\)\s*$").unwrap();
-    let result2 = re2.replace_all(&result1, |cap: &regex::Captures| {
+    let re = Regex::new(r"\s*\(?\s*(\d+)\s*\)?\s*$").unwrap();
+    let result = re.replace_all(&result, |cap: &regex::Captures| {
         format!(" {:02}", cap[1].parse::<i32>().unwrap())
     });
 
-    let re3 = Regex::new(r"第?\s*(\d+)巻?\s*$").unwrap();
-    let result3 = re3.replace_all(&result2, |cap: &regex::Captures| {
+    let re = Regex::new(r"第?\s*(\d+)巻?\s*$").unwrap();
+    let result = re.replace_all(&result, |cap: &regex::Captures| {
         format!(" {:02}", cap[1].parse::<i32>().unwrap())
     });
 
-    result3.to_string()
+    result.to_string()
+}
+
+pub fn remove_spaces(input: &str) -> String {
+    let re = Regex::new(r"\s+").unwrap();
+    let result = re.replace_all(input, " ");
+
+    result.trim().to_string()
 }
 
 #[cfg(test)]
@@ -90,8 +97,16 @@ mod tests {
         assert_eq!(super::pad_volume_number("xxx (1) yyy"), "xxx 01 yyy");
         assert_eq!(super::pad_volume_number("xxx(1) yyy"), "xxx 01 yyy");
         assert_eq!(super::pad_volume_number("xxx (1)"), "xxx 01");
+        assert_eq!(super::pad_volume_number("xxx 1 yyy"), "xxx 01 yyy");
+        assert_eq!(super::pad_volume_number("xxx1 yyy"), "xxx 01 yyy");
+        assert_eq!(super::pad_volume_number("xxx 1"), "xxx 01");
         assert_eq!(super::pad_volume_number("xxx1巻"), "xxx 01");
         assert_eq!(super::pad_volume_number("xxx第1巻"), "xxx 01");
         assert_eq!(super::pad_volume_number("xxx1"), "xxx 01");
+    }
+
+    #[test]
+    fn test_remove_spaces() {
+        assert_eq!(super::remove_spaces("  xxx  yyy  "), "xxx yyy");
     }
 }
