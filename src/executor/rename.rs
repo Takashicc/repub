@@ -1,7 +1,7 @@
 use core::panic;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 use std::{fs, path::PathBuf};
 
 use quick_xml::events::Event;
@@ -34,7 +34,12 @@ pub fn execute(params: &RenameParams) {
         let rootfile_path = get_rootfile_path(&mut archive);
         let mut metadata = get_book_metadata(&mut archive, &rootfile_path);
         metadata.format();
-        println!("{:?}", metadata);
+        println!(
+            "rename \"{}\" \"[{}]{}.epub\"",
+            filepath.file_name().unwrap().to_string_lossy(),
+            metadata.author.unwrap(),
+            metadata.title.unwrap()
+        );
     });
 }
 
@@ -102,11 +107,19 @@ impl BookMetadata {
     }
 
     fn format_title(&mut self) {
+        let target_characters_file = BufReader::new(File::open("regex_raw_strings.txt").unwrap());
+        let regex_raw_strings = target_characters_file
+            .lines()
+            .map(|l| l.unwrap())
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<String>>();
+
         if self.title.is_some() {
             let title = self.title.as_ref().unwrap();
             let title = strings::to_half_width(title);
             let title = strings::replace_unsafe_symbols(&title);
             let title = strings::replace_round_brackets(&title);
+            let title = strings::remove_characters(&regex_raw_strings, &title);
             let title = strings::pad_volume_number(&title);
             let title = strings::remove_spaces(&title);
             self.title = Some(title);

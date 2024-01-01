@@ -42,6 +42,15 @@ pub fn replace_round_brackets(input: &str) -> String {
         .collect()
 }
 
+pub fn remove_characters(regex_raw_strings: &[String], input: &str) -> String {
+    let mut result = input.to_string();
+    for regex_raw_string in regex_raw_strings.iter() {
+        let re = Regex::new(regex_raw_string).unwrap();
+        result = re.replace_all(&result, "").to_string();
+    }
+    result.to_string()
+}
+
 pub fn pad_volume_number(input: &str) -> String {
     let re = Regex::new(r"\s*\(?\s*(\d+)\s*\)?\s+").unwrap();
     let result = re.replace_all(input, |caps: &regex::Captures| {
@@ -89,6 +98,13 @@ mod tests {
     fn test_replace_round_brackets() {
         let actual = super::replace_round_brackets("（）");
         let expected = "()";
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn test_remove_characters() {
+        let actual = super::remove_characters(&["a".to_string(), "b".to_string()], "abc");
+        let expected = "c";
         assert_eq!(actual, expected)
     }
 
