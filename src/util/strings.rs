@@ -42,7 +42,7 @@ pub fn replace_round_brackets(input: &str) -> String {
         .collect()
 }
 
-pub fn pad_numeric_string_enclosed_in_round_brackets(input: &str) -> String {
+pub fn pad_volume_number(input: &str) -> String {
     let re1 = Regex::new(r"\s*\(\s*(\d+)\s*\)\s+").unwrap();
     let result1 = re1.replace_all(input, |caps: &regex::Captures| {
         format!(" {:02} ", caps[1].parse::<i32>().unwrap())
@@ -53,7 +53,12 @@ pub fn pad_numeric_string_enclosed_in_round_brackets(input: &str) -> String {
         format!(" {:02}", cap[1].parse::<i32>().unwrap())
     });
 
-    result2.to_string()
+    let re3 = Regex::new(r"第?\s*(\d+)巻?\s*$").unwrap();
+    let result3 = re3.replace_all(&result2, |cap: &regex::Captures| {
+        format!(" {:02}", cap[1].parse::<i32>().unwrap())
+    });
+
+    result3.to_string()
 }
 
 #[cfg(test)]
@@ -81,18 +86,12 @@ mod tests {
     }
 
     #[test]
-    fn test_pad_numeric_string_enclosed_in_round_brackets() {
-        assert_eq!(
-            super::pad_numeric_string_enclosed_in_round_brackets("xxx (1) yyy"),
-            "xxx 01 yyy"
-        );
-        assert_eq!(
-            super::pad_numeric_string_enclosed_in_round_brackets("xxx(1) yyy"),
-            "xxx 01 yyy"
-        );
-        assert_eq!(
-            super::pad_numeric_string_enclosed_in_round_brackets("xxx (1)"),
-            "xxx 01"
-        );
+    fn test_pad_volume_number() {
+        assert_eq!(super::pad_volume_number("xxx (1) yyy"), "xxx 01 yyy");
+        assert_eq!(super::pad_volume_number("xxx(1) yyy"), "xxx 01 yyy");
+        assert_eq!(super::pad_volume_number("xxx (1)"), "xxx 01");
+        assert_eq!(super::pad_volume_number("xxx1巻"), "xxx 01");
+        assert_eq!(super::pad_volume_number("xxx第1巻"), "xxx 01");
+        assert_eq!(super::pad_volume_number("xxx1"), "xxx 01");
     }
 }
