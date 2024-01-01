@@ -1,3 +1,5 @@
+use regex::Regex;
+
 pub fn to_half_width(input: &str) -> String {
     input
         .chars()
@@ -40,6 +42,20 @@ pub fn replace_round_brackets(input: &str) -> String {
         .collect()
 }
 
+pub fn pad_numeric_string_enclosed_in_round_brackets(input: &str) -> String {
+    let re1 = Regex::new(r"\s*\(\s*(\d+)\s*\)\s+").unwrap();
+    let result1 = re1.replace_all(input, |caps: &regex::Captures| {
+        format!(" {:02} ", caps[1].parse::<i32>().unwrap())
+    });
+
+    let re2 = Regex::new(r"\s*\(\s*(\d+)\s*\)\s*$").unwrap();
+    let result2 = re2.replace_all(&result1, |cap: &regex::Captures| {
+        format!(" {:02}", cap[1].parse::<i32>().unwrap())
+    });
+
+    result2.to_string()
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -62,5 +78,21 @@ mod tests {
         let actual = super::replace_round_brackets("（）");
         let expected = "()";
         assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn test_pad_numeric_string_enclosed_in_round_brackets() {
+        assert_eq!(
+            super::pad_numeric_string_enclosed_in_round_brackets("xxx (1) yyy"),
+            "xxx 01 yyy"
+        );
+        assert_eq!(
+            super::pad_numeric_string_enclosed_in_round_brackets("xxx(1) yyy"),
+            "xxx 01 yyy"
+        );
+        assert_eq!(
+            super::pad_numeric_string_enclosed_in_round_brackets("xxx (1)"),
+            "xxx 01"
+        );
     }
 }

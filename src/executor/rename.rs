@@ -106,6 +106,7 @@ impl BookMetadata {
             let title = strings::to_half_width(title);
             let title = strings::replace_unsafe_symbols(&title);
             let title = strings::replace_round_brackets(&title);
+            let title = strings::pad_numeric_string_enclosed_in_round_brackets(&title);
             self.title = Some(title);
         }
     }
