@@ -6,9 +6,11 @@ use std::{fs, path::PathBuf};
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use rayon::prelude::*;
 use zip::ZipArchive;
 
 use crate::params::rename::RenameParams;
+use crate::util::strings;
 
 pub fn execute(params: &RenameParams) {
     let filepaths = walkdir::WalkDir::new(&params.target_dir)
@@ -26,13 +28,14 @@ pub fn execute(params: &RenameParams) {
         .map(|v| v.into_path())
         .collect::<Vec<PathBuf>>();
 
-    for filepath in filepaths.iter() {
+    filepaths.par_iter().for_each(|filepath| {
         let file = fs::File::open(filepath).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();
         let rootfile_path = get_rootfile_path(&mut archive);
-        let metadata = get_book_metadata(&mut archive, &rootfile_path);
+        let mut metadata = get_book_metadata(&mut archive, &rootfile_path);
+        metadata.format();
         println!("{:?}", metadata);
-    }
+    });
 }
 
 fn get_rootfile_path(archive: &mut ZipArchive<File>) -> String {
@@ -81,6 +84,30 @@ impl BookMetadata {
 
     fn is_filled(&self) -> bool {
         self.author.is_some() && self.title.is_some()
+    }
+
+    fn format(&mut self) {
+        self.format_author();
+        self.format_title();
+    }
+
+    fn format_author(&mut self) {
+        if self.author.is_some() {
+            let author = self.author.as_ref().unwrap();
+            let author = strings::to_half_width(author);
+            let author = strings::replace_unsafe_symbols(&author);
+            self.author = Some(author);
+        }
+    }
+
+    fn format_title(&mut self) {
+        if self.title.is_some() {
+            let title = self.title.as_ref().unwrap();
+            let title = strings::to_half_width(title);
+            let title = strings::replace_unsafe_symbols(&title);
+            let title = strings::replace_round_brackets(&title);
+            self.title = Some(title);
+        }
     }
 }
 
