@@ -7,15 +7,11 @@ use zip::ZipArchive;
 use crate::error::AppError;
 
 pub fn get_rootfile_path(archive: &mut ZipArchive<File>) -> Result<String> {
-    let container = match archive.by_name("META-INF/container.xml") {
-        Err(_) => {
-            return Err(AppError::BadEPubFile {
-                reason: "Cannot find META-INF/container.xml".to_string(),
-            }
-            .into())
-        }
-        Ok(v) => v,
-    };
+    let container = archive
+        .by_name("META-INF/container.xml")
+        .or(Err(AppError::BadEPubFile {
+            reason: "Cannot find META-INF/container.xml".to_string(),
+        }))?;
     let mut reader = Reader::from_reader(BufReader::new(container));
     reader
         .trim_text(true)
@@ -29,21 +25,12 @@ pub fn get_rootfile_path(archive: &mut ZipArchive<File>) -> Result<String> {
             Ok(Event::Start(ref e)) => {
                 if e.name().as_ref() == b"rootfile" {
                     let rootfile_path = match e.try_get_attribute("full-path") {
-                        Ok(Some(v)) => match v.unescape_value() {
-                            Ok(v) => v,
-                            Err(e) => {
-                                return Err(AppError::BadEPubFile {
-                                    reason: "Failed to unescape full-path attribute".to_string(),
-                                }
-                                .into())
-                            }
-                        },
-                        _ => {
-                            return Err(AppError::BadEPubFile {
-                                reason: "Cannot find full-path attribute".to_string(),
-                            }
-                            .into())
-                        }
+                        Ok(Some(v)) => v.unescape_value().or(Err(AppError::BadEPubFile {
+                            reason: "Failed to unescape full-path attribute".to_string(),
+                        }))?,
+                        _ => Err(AppError::BadEPubFile {
+                            reason: "Cannot find full-path attribute".to_string(),
+                        })?,
                     };
 
                     break rootfile_path.to_string();

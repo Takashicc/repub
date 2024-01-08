@@ -106,15 +106,11 @@ impl BookMetadata {
 }
 
 fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Result<BookMetadata> {
-    let rootfile = match archive.by_name(rootfile_path) {
-        Ok(v) => v,
-        Err(_) => {
-            return Err(AppError::BadEPubFile {
-                reason: format!("Cannot open rootfile in epub: {rootfile_path}"),
-            }
-            .into())
-        }
-    };
+    let rootfile = archive
+        .by_name(rootfile_path)
+        .or(Err(AppError::BadEPubFile {
+            reason: format!("Cannot open rootfile in epub: {rootfile_path}"),
+        }))?;
     let mut reader = Reader::from_reader(BufReader::new(rootfile));
     reader
         .trim_text(true)
