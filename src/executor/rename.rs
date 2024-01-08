@@ -1,76 +1,51 @@
 use core::panic;
-use std::ffi::OsStr;
+use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::{fs, path::PathBuf};
+use std::path::Path;
 
+use anyhow::{Context, Result};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use rayon::prelude::*;
 use zip::ZipArchive;
 
+use crate::error::AppError;
 use crate::params::rename::RenameParams;
-use crate::util::strings;
+use crate::util::{epub, files, strings};
 
-pub fn execute(params: &RenameParams) {
-    let filepaths = walkdir::WalkDir::new(&params.target_dir)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .unwrap_or(OsStr::new(""))
-                .to_ascii_lowercase()
-                == "epub"
-        })
-        .map(|v| v.into_path())
-        .collect::<Vec<PathBuf>>();
+pub fn execute(params: &RenameParams) -> Result<()> {
+    files::get_filepaths(Path::new(&params.input))
+        .par_iter()
+        .for_each(|filepath| {
+            if let Err(e) = process(filepath) {
+                println!("{e}");
+            };
+        });
 
-    filepaths.par_iter().for_each(|filepath| {
-        let file = fs::File::open(filepath).unwrap();
-        let mut archive = zip::ZipArchive::new(file).unwrap();
-        let rootfile_path = get_rootfile_path(&mut archive);
-        let mut metadata = get_book_metadata(&mut archive, &rootfile_path);
-        metadata.format();
-        println!(
-            "rename \"{}\" \"[{}]{}.epub\"",
-            filepath.file_name().unwrap().to_string_lossy(),
-            metadata.author.unwrap(),
-            metadata.title.unwrap()
-        );
-    });
+    Ok(())
 }
 
-fn get_rootfile_path(archive: &mut ZipArchive<File>) -> String {
-    let container = archive.by_name("META-INF/container.xml").unwrap();
-    let mut reader = Reader::from_reader(BufReader::new(container));
-    reader
-        .trim_text(true)
-        .expand_empty_elements(true)
-        .check_end_names(false);
-    let mut buf = Vec::new();
-    let rootfile_path: String = loop {
-        match reader.read_event_into(&mut buf) {
-            Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-            Ok(Event::Eof) => panic!("Cannot find rootfile"),
-            Ok(Event::Start(ref e)) => {
-                if e.name().as_ref() == b"rootfile" {
-                    let rootfile_path = e
-                        .try_get_attribute("full-path")
-                        .unwrap()
-                        .unwrap()
-                        .unescape_value()
-                        .unwrap();
-                    break rootfile_path.to_string();
-                }
-            }
-            _ => {}
-        }
-    };
+fn process(path: &Path) -> Result<()> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("Failed to open file: {}", path.to_string_lossy()))?;
+    let mut archive = zip::ZipArchive::new(file).with_context(|| {
+        format!(
+            "Failed to open file as zip archive: {}",
+            path.to_string_lossy()
+        )
+    })?;
+    let rootfile_path = epub::get_rootfile_path(&mut archive)?;
+    let mut metadata = get_book_metadata(&mut archive, &rootfile_path)?;
+    metadata.format()?;
+    println!(
+        "rename \"{}\" \"[{}]{}.epub\"",
+        path.file_name().unwrap().to_string_lossy(),
+        metadata.author.unwrap(),
+        metadata.title.unwrap()
+    );
 
-    rootfile_path
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -91,14 +66,14 @@ impl BookMetadata {
         self.author.is_some() && self.title.is_some()
     }
 
-    fn format(&mut self) {
+    fn format(&mut self) -> Result<()> {
         self.format_author();
-        self.format_title();
+        self.format_title()?;
+        Ok(())
     }
 
     fn format_author(&mut self) {
-        if self.author.is_some() {
-            let author = self.author.as_ref().unwrap();
+        if let Some(author) = self.author.as_ref() {
             let author = strings::to_half_width(author);
             let author = strings::replace_unsafe_symbols(&author);
             let author = strings::remove_spaces(&author);
@@ -106,8 +81,9 @@ impl BookMetadata {
         }
     }
 
-    fn format_title(&mut self) {
-        let target_characters_file = BufReader::new(File::open("regex_raw_strings.txt").unwrap());
+    fn format_title(&mut self) -> Result<()> {
+        // TODO move file load to initialization
+        let target_characters_file = BufReader::new(File::open("regex_raw_strings.txt")?);
         let regex_raw_strings = target_characters_file
             .lines()
             .map(|l| l.unwrap())
@@ -124,11 +100,21 @@ impl BookMetadata {
             let title = strings::remove_spaces(&title);
             self.title = Some(title);
         }
+
+        Ok(())
     }
 }
 
-fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> BookMetadata {
-    let rootfile = archive.by_name(rootfile_path).unwrap();
+fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Result<BookMetadata> {
+    let rootfile = match archive.by_name(rootfile_path) {
+        Ok(v) => v,
+        Err(_) => {
+            return Err(AppError::BadEPubFile {
+                reason: format!("Cannot open rootfile in epub: {rootfile_path}"),
+            }
+            .into())
+        }
+    };
     let mut reader = Reader::from_reader(BufReader::new(rootfile));
     reader
         .trim_text(true)
@@ -146,7 +132,7 @@ fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Boo
                 let content = loop {
                     match reader.read_event_into(&mut buf_inner) {
                         Ok(Event::Text(e)) => {
-                            break e.unescape().unwrap().to_string();
+                            break e.unescape()?.to_string();
                         }
                         Ok(Event::End(ref e)) if e.name().as_ref() == b"dc:creator" => {
                             break "".to_string();
@@ -162,7 +148,7 @@ fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Boo
                 let content = loop {
                     match reader.read_event_into(&mut buf_inner) {
                         Ok(Event::Text(e)) => {
-                            break e.unescape().unwrap().to_string();
+                            break e.unescape()?.to_string();
                         }
                         Ok(Event::End(ref e)) if e.name().as_ref() == b"dc:title" => {
                             break "".to_string();
@@ -181,5 +167,5 @@ fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Boo
         }
     }
 
-    result
+    Ok(result)
 }
