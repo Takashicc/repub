@@ -7,8 +7,9 @@ use zip::ZipArchive;
 use crate::error::AppError;
 
 pub fn get_rootfile_path(archive: &mut ZipArchive<File>) -> Result<String> {
+    let container_xml_path = "META-INF/container.xml";
     let container = archive
-        .by_name("META-INF/container.xml")
+        .by_name(container_xml_path)
         .or(Err(AppError::BadEPubFile {
             reason: "Cannot find META-INF/container.xml".to_string(),
         }))?;
@@ -20,8 +21,15 @@ pub fn get_rootfile_path(archive: &mut ZipArchive<File>) -> Result<String> {
     let mut buf = Vec::new();
     let rootfile_path: String = loop {
         match reader.read_event_into(&mut buf) {
-            Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
-            Ok(Event::Eof) => panic!("Cannot find rootfile"),
+            Err(e) => {
+                return Err(AppError::XMLReadError {
+                    err: e,
+                    position: reader.buffer_position(),
+                    path: container_xml_path.to_string(),
+                }
+                .into())
+            }
+            Ok(Event::Eof) => unreachable!(),
             Ok(Event::Start(ref e)) => {
                 if e.name().as_ref() == b"rootfile" {
                     let rootfile_path = match e.try_get_attribute("full-path") {

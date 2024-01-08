@@ -1,4 +1,3 @@
-use core::panic;
 use std::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -121,7 +120,14 @@ fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Res
     let mut result = BookMetadata::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+            Err(e) => {
+                return Err(AppError::XMLReadError {
+                    err: e,
+                    position: reader.buffer_position(),
+                    path: rootfile_path.to_string(),
+                }
+                .into())
+            }
             Ok(Event::Eof) => break,
             Ok(Event::Start(ref e)) if e.name().as_ref() == b"dc:creator" => {
                 let mut buf_inner = Vec::new();
@@ -133,7 +139,14 @@ fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Res
                         Ok(Event::End(ref e)) if e.name().as_ref() == b"dc:creator" => {
                             break "".to_string();
                         }
-                        Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+                        Err(e) => {
+                            return Err(AppError::XMLReadError {
+                                err: e,
+                                position: reader.buffer_position(),
+                                path: rootfile_path.to_string(),
+                            }
+                            .into())
+                        }
                         _ => {}
                     }
                 };
@@ -149,7 +162,14 @@ fn get_book_metadata(archive: &mut ZipArchive<File>, rootfile_path: &str) -> Res
                         Ok(Event::End(ref e)) if e.name().as_ref() == b"dc:title" => {
                             break "".to_string();
                         }
-                        Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+                        Err(e) => {
+                            return Err(AppError::XMLReadError {
+                                err: e,
+                                position: reader.buffer_position(),
+                                path: rootfile_path.to_string(),
+                            }
+                            .into())
+                        }
                         _ => {}
                     }
                 };
