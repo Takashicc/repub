@@ -14,7 +14,7 @@ use crate::params::rename::RenameParams;
 use crate::util::{epub, files, strings};
 
 pub fn execute(params: &RenameParams) -> Result<()> {
-    files::get_filepaths(Path::new(&params.input))
+    files::list_epub_filepaths(Path::new(&params.input))
         .par_iter()
         .for_each(|filepath| {
             if let Err(e) = process(filepath) {
