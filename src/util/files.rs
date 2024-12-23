@@ -5,7 +5,7 @@ use std::{
 
 use walkdir::WalkDir;
 
-pub fn get_filepaths(path: &Path) -> Vec<PathBuf> {
+pub fn list_epub_filepaths(path: &Path) -> Vec<PathBuf> {
     if path.is_file() {
         vec![path.to_path_buf()]
     } else {
