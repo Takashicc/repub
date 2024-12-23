@@ -16,6 +16,7 @@ struct Cli {
 enum Commands {
     /// Show rename commands for epub files
     Rename(params::rename::RenameParams),
+    Info(params::info::InfoParams),
 }
 
 fn main() -> Result<()> {
@@ -23,6 +24,9 @@ fn main() -> Result<()> {
     match &cli.command {
         Some(Commands::Rename(v)) => {
             executor::rename::execute(v)?;
+        }
+        Some(Commands::Info(v)) => {
+            executor::info::execute(v)?;
         }
         None => eprintln!("No subcommand provided!\nCheck the subcommands with `repub -h`"),
     }
