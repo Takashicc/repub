@@ -18,8 +18,7 @@ pub fn list_epub_filepaths(path: &Path) -> Vec<PathBuf> {
                 e.path()
                     .extension()
                     .unwrap_or(OsStr::new(""))
-                    .to_ascii_lowercase()
-                    == "epub"
+                    .eq_ignore_ascii_case("epub")
             })
             .map(|v| v.into_path())
             .collect::<Vec<PathBuf>>()
