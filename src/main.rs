@@ -1,6 +1,6 @@
-mod error;
 mod executor;
 mod params;
+mod services;
 mod util;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -17,6 +17,7 @@ enum Commands {
     /// Show rename commands for epub files
     Rename(params::rename::RenameParams),
     Info(params::info::InfoParams),
+    Unpack(params::unpack::UnpackParams),
 }
 
 fn main() -> Result<()> {
@@ -27,6 +28,9 @@ fn main() -> Result<()> {
         }
         Some(Commands::Info(v)) => {
             executor::info::execute(v)?;
+        }
+        Some(Commands::Unpack(v)) => {
+            executor::unpack::execute(v)?;
         }
         None => eprintln!("No subcommand provided!\nCheck the subcommands with `repub -h`"),
     }
