@@ -1,0 +1,12 @@
+version: "3"
+
+tasks:
+  lint:
+    desc: Lint
+    cmds:
+      - cargo clippy --all-targets --all-features -- -Dclippy::all
+
+  build:
+    desc: Build
+    cmds:
+      - cargo build --release
