@@ -1,14 +1,15 @@
 use anyhow::{anyhow, Context};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::{params::unpack::UnpackParams, util::files};
 use crate::{services, util};
 use anyhow::Result;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use std::fs::{self, File};
-use std::io::{self};
+use std::io::{self, Cursor, Read, Seek};
 use zip::read::ZipArchive;
 
 pub fn execute(params: &UnpackParams) -> Result<()> {
@@ -16,7 +17,7 @@ pub fn execute(params: &UnpackParams) -> Result<()> {
         .par_iter()
         .for_each(|filepath| {
             if let Err(e) = process_epub(filepath) {
-                eprintln!("{e}");
+                eprintln!("filename: {}, error: {:?}", filepath.display(), e);
             }
         });
 
@@ -24,46 +25,67 @@ pub fn execute(params: &UnpackParams) -> Result<()> {
 }
 
 fn process_epub(epub_path: &Path) -> Result<()> {
-    let file = File::open(epub_path)?;
-    let mut archive = ZipArchive::new(file)?;
+    let epub_bytes = Arc::new(fs::read(epub_path)?);
+    let mut archive = ZipArchive::new(Cursor::new(&**epub_bytes))?;
 
     let container_xml = services::epub::read_container_xml(&mut archive)?;
     let opf_path = services::epub::get_rootfile_path(&container_xml)?;
     let opf_content = services::epub::read_file_from_archive(&mut archive, &opf_path)?;
 
-    if !services::epub::is_comic(&opf_content)? {
-        println!(
-            "このEPUBは漫画ではないためスキップします。: {}",
-            epub_path.display()
-        );
-        return Ok(());
-    }
+    // if !services::epub::is_comic(&opf_content)? {
+    //     println!(
+    //         "このEPUBは漫画ではないためスキップします。: {}",
+    //         epub_path.display()
+    //     );
+    //     return Ok(());
+    // }
 
     let opf_data = services::epub::parse_opf(&opf_content)?;
 
     let epub_dir = epub_path.parent().unwrap_or_else(|| Path::new("."));
     let epub_stem = epub_path.file_stem().unwrap().to_string_lossy();
-    let output_dir = epub_dir.join(format!("{}", epub_stem));
+    let output_dir = epub_dir.join(epub_stem.to_string());
     fs::create_dir_all(&output_dir)?;
 
     // spine の順に、manifest のアイテムの中から画像を抽出
-    let mut counter = 1;
-    for spine_item_ref in opf_data.spine_item_refs {
-        match opf_data.manifest_items.get(&spine_item_ref.idref) {
-            Some(item) => {
-                if let Some(fallback) = &item.fallback {
-                    extract_image_from_fallback(
-                        &opf_data.manifest_items,
-                        fallback,
-                        &opf_path,
-                        &mut archive,
-                        counter,
-                        &output_dir,
+    opf_data
+        .spine_item_refs
+        .par_iter()
+        .enumerate()
+        .try_for_each(|(i, spine_item_ref)| -> Result<()> {
+            let counter = i + 1;
+            let item = opf_data
+                .manifest_items
+                .get(&spine_item_ref.idref)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "manifestに存在しないidrefがspineに存在します: {}",
+                        spine_item_ref.idref
                     )
-                    .with_context(|| {
-                        format!("Failed to extract image from fallback: {}", fallback)
-                    })?;
-                    counter += 1;
+                })?;
+            let mut archive = ZipArchive::new(Cursor::new(&**epub_bytes))?;
+            if let Some(fallback) = &item.fallback {
+                extract_image_from_fallback(
+                    &opf_data.manifest_items,
+                    fallback,
+                    &opf_path,
+                    &mut archive,
+                    counter,
+                    &output_dir,
+                )
+                .with_context(|| format!("Failed to extract image from fallback: {}", fallback))?;
+            } else {
+                let image_suffixes = vec![".jpg", ".jpeg", ".png"];
+                if image_suffixes
+                    .iter()
+                    .any(|suffix| item.href.ends_with(suffix))
+                {
+                    let image_path = Path::new(&opf_path)
+                        .parent()
+                        .unwrap_or(Path::new(""))
+                        .join(&item.href);
+                    extract_file(&mut archive, &image_path, counter, &output_dir)
+                        .with_context(|| format!("Failed to extract image: {}", item.href))?;
                 } else {
                     extract_image_from_xhtml(
                         &opf_path,
@@ -75,28 +97,27 @@ fn process_epub(epub_path: &Path) -> Result<()> {
                     .with_context(|| {
                         format!("Failed to extract image from xhtml: {}", &item.href)
                     })?;
-                    counter += 1;
                 }
             }
-            None => Err(anyhow!(
-                "manifestに存在しないidrefがspineに存在します: {}",
-                spine_item_ref.idref
-            ))?,
-        }
-    }
+
+            Ok(())
+        })?;
 
     println!("  抽出完了: {}", epub_path.display());
     Ok(())
 }
 
-fn extract_image_from_fallback(
+fn extract_image_from_fallback<T>(
     manifest_items: &HashMap<String, services::epub::ManifestItem>,
     fallback: &str,
     opf_path: &str,
-    archive: &mut ZipArchive<File>,
-    counter: i32,
+    archive: &mut ZipArchive<T>,
+    counter: usize,
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: Read + Seek,
+{
     let fallback_item = manifest_items.get(fallback);
     if let Some(fallback_item) = fallback_item {
         if !fallback_item.media_type.starts_with("image/") {
@@ -113,13 +134,16 @@ fn extract_image_from_fallback(
     Ok(())
 }
 
-fn extract_image_from_xhtml(
+fn extract_image_from_xhtml<T>(
     opf_path: &str,
     href: &str,
-    archive: &mut ZipArchive<File>,
-    counter: i32,
+    archive: &mut ZipArchive<T>,
+    counter: usize,
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: Read + Seek,
+{
     // Get image href from xhtml
     let xhtml_path = Path::new(&opf_path)
         .parent()
@@ -139,12 +163,15 @@ fn extract_image_from_xhtml(
     Ok(())
 }
 
-fn extract_file(
-    archive: &mut ZipArchive<File>,
+fn extract_file<T>(
+    archive: &mut ZipArchive<T>,
     path: &Path,
-    counter: i32,
+    counter: usize,
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: Read + Seek,
+{
     let normalized_path = util::paths::normalize_path(path);
     let mut file = archive
         .by_name(&normalized_path)

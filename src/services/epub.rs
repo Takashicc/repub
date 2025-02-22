@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::File,
-    io::{BufRead as _, BufReader, Read},
+    io::{BufRead as _, BufReader, Read, Seek},
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -23,11 +23,17 @@ const TAG_ITEM: &[u8] = b"item";
 const TAG_SPINE: &[u8] = b"spine";
 const TAG_ITEMREF: &[u8] = b"itemref";
 
-pub fn read_container_xml(archive: &mut ZipArchive<File>) -> Result<String> {
+pub fn read_container_xml<T>(archive: &mut ZipArchive<T>) -> Result<String>
+where
+    T: Read + Seek,
+{
     read_file_from_archive(archive, CONTAINER_PATH)
 }
 
-pub fn read_file_from_archive(archive: &mut ZipArchive<File>, filepath: &str) -> Result<String> {
+pub fn read_file_from_archive<T>(archive: &mut ZipArchive<T>, filepath: &str) -> Result<String>
+where
+    T: Read + Seek,
+{
     let mut res = String::new();
     archive
         .by_name(filepath)
@@ -230,7 +236,7 @@ pub fn get_book_type(opf_content: &str) -> Result<Option<String>> {
 // metaタグからbook-typeがcomicかどうかを判定する
 pub fn is_comic(opf_content: &str) -> Result<bool> {
     let book_type = get_book_type(opf_content)
-        .with_context(|| format!("Failed to get book type from OPF content"))?;
+        .with_context(|| "Failed to get book type from OPF content".to_string())?;
     if let Some(book_type) = book_type {
         Ok(book_type == "comic")
     } else {
